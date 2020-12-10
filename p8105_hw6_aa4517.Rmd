@@ -102,3 +102,151 @@ models_results_df %>%
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
+
+## Problem 2 
+Read in the data
+
+```{r import_tidy_baby, message = FALSE}
+baby_df = 
+  read_csv("./data/birthweight.csv") %>% 
+  mutate(
+    babysex = as_factor(babysex),
+    frace = as_factor(frace),
+    malform = as_factor(malform),
+    mrace = as_factor(mrace),
+    parity = as_factor(parity),
+    pnumsga = as_factor(pnumsga),
+    prior_lbw = case_when(
+      pnumlbw == 0 ~ 0,
+      pnumlbw > 0  ~ 1
+    ),
+    prior_lbw = as_factor(prior_lbw)
+  )
+```
+The birthweight data contains `r bw_df %>% nrow()` rows, and no missing data.
+
+#### Fit the models
+
+We will compare three models: a crude model(m1) with just length and gestational weeks; an interactions model(m2) with head circumference, length, sex, and all interactions (including 3-way); and a full model(m3), that includes head circumference, length, sex, mother's race, family income, presence of malformations, and the interaction of mother's pre-pregnancy weight and her gestational weight. 
+
+```{r models, message = FALSE}
+model_m1 = lm(bwt ~ blength + gaweeks, data = baby_df)
+model_m2 = lm(bwt ~ bhead * blength * babysex, data = baby_df)
+model_m3 = lm(bwt ~ bhead + blength + babysex + mrace + fincome + malform + delwt * ppwt, 
+                data = baby_df)
+```
+
+We will now create the residuals and predicted values for each model. 
+
+```{r resid, message = FALSE}
+m1_df = 
+  baby_df %>% 
+  modelr::add_residuals(model_crude) %>% 
+  modelr::add_predictions(model_crude)
+  
+m2_df = 
+  baby_df %>% 
+  modelr::add_residuals(model_inter) %>% 
+  modelr::add_predictions(model_inter)
+m3_df = 
+  baby_df %>% 
+  modelr::add_residuals(model_full) %>% 
+  modelr::add_predictions(model_full)
+```
+
+Plotting the residuals and predicted values for each model.
+
+```{r resid_plots, message = FALSE}
+m1_resid_plot = 
+  m1_df %>% 
+  ggplot(aes(x = resid, y = pred)) +
+  geom_point(alpha = 0.5) +
+  xlim(-2000, 5000) +
+  ylim(-1000, 5000) +
+  labs(
+    title = "Predicted values on residuals for crude model",
+    x = "Residuals",
+    y = "Predicted values"
+  )
+m2_resid_plot = 
+  m2_df %>% 
+  ggplot(aes(x = resid, y = pred)) +
+  geom_point(alpha = 0.5) +
+  xlim(-2000, 5000) +
+  ylim(-1000, 5000) +
+  labs(
+    title = "Predicted values on residuals for interaction model",
+    x = "Residuals",
+    y = "Predicted values"
+  )
+m3_resid_plot = 
+  m3_df %>% 
+  ggplot(aes(x = resid, y = pred)) +
+  geom_point(alpha = 0.5) +
+  xlim(-2000, 5000) +
+  ylim(-1000, 5000) +
+  labs(
+    title = "Predicted values on residuals for full model",
+    x = "Residuals",
+    y = "Predicted values"
+  )
+m1_resid_plot
+m2_resid_plot
+m3_resid_plot
+```
+
+The interaction and full models are very similar, the crude model has much larger residuals and predicted values. Thus, the crude model is likely a poorer fit for the data.
+
+We will do soe cross-validation now to understand more- 
+
+```{r cv, message = FALSE}
+cv_df =
+  crossv_mc(baby_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    text = map(test, as_tibble),
+    m1_mod = map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    m2_mod = map(.x = train, ~lm(bwt ~ bhead * blength * babysex, data = .x)),
+    m3_mod = map(.x = train, ~lm(bwt ~ bhead + blength + babysex + mrace + fincome + 
+                                    malform + delwt * ppwt, data = .x)),
+    rmse_m1 = map2_dbl(.x = m1_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_m2 = map2_dbl(.x = m2_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_m3 = map2_dbl(.x = m3_mod, .y = test, ~rmse(model = .x, data = .y))
+  )
+cv_plot = 
+  cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    names_prefix = "rmse_",
+    values_to = "rmse"
+  ) %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin()
+cv_plot
+```
+
+The full model(model 3) will be the best fir for data because it has the lowest root mean squared error (rmse).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
